@@ -579,7 +579,7 @@ function catInfo(id){
 }
 
 /* ============================= STATE ============================= */
-let state = { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[] };
+let state = { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[], categorias: DEFAULT_CATS.map(c=>({...c})) };
 let filters = { tipo:'todos', categoria:'todas', periodo:'mes', busca:'' };
 let editing = null; // {kind, id}
 
