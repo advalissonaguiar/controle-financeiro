@@ -12,6 +12,7 @@
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Controle Financeiro — Fluxo de Caixa Mensal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
 
@@ -282,6 +283,20 @@ body{
 .user-info{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-faint);margin-top:6px;}
 .user-info button{background:none;border:none;color:var(--text-dim);font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;padding:0;}
 .user-info button:hover{color:var(--coral);}
+
+/* ===== Export / print ===== */
+#printArea{display:none;}
+@media print{
+  body.printing > *:not(#printArea){ display:none !important; }
+  body.printing #printArea{
+    display:block !important; color:#111; background:#fff; padding:24px;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  body.printing #printArea h1{ font-size:19px; margin:0 0 2px; }
+  body.printing #printArea table{ width:100%; border-collapse:collapse; }
+  body.printing #printArea th{ border-bottom:2px solid #222; text-align:left; padding:6px 8px; }
+  body.printing #printArea td{ padding:5px 8px; border-bottom:1px solid #ddd; font-size:12px; }
+}
 </style>
 </head>
 <body>
@@ -369,7 +384,10 @@ body{
   <div class="section">
     <div class="section-head">
       <div class="section-title" id="lancTitle"></div>
-      <span class="section-count" id="lancCount">0</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="icon-btn" id="exportTrigger" title="Exportar mês"></button>
+        <span class="section-count" id="lancCount">0</span>
+      </div>
     </div>
     <div id="lancList"></div>
   </div>
@@ -430,7 +448,26 @@ body{
   </div>
 </div>
 
+<div class="overlay" id="exportOverlay">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-head">
+      <div class="modal-title">Exportar lançamentos</div>
+      <button class="modal-close" id="exportClose">✕</button>
+    </div>
+    <div class="field">
+      <label>Mês</label>
+      <input type="month" id="exportMonth">
+    </div>
+    <p style="font-size:12px;color:var(--text-faint);margin:-4px 0 4px;">Inclui resumo (entradas, saídas, saldo) e a lista detalhada de lançamentos do mês escolhido.</p>
+    <div class="modal-actions" style="margin-top:10px;">
+      <button type="button" class="mini-btn" id="exportPdfBtn" style="flex:1;">Baixar PDF</button>
+      <button type="button" class="mini-btn primary" id="exportXlsxBtn" style="flex:1;">Baixar Excel</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
+<div id="printArea"></div>
 
 <script type="module">
 /* ============================= FIREBASE =============================
@@ -487,7 +524,8 @@ const ICONS = {
   trendDown:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>',
   settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15 1.65 1.65 0 0 0 3 14H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
   alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-  inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>'
+  inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
 };
 function ic(name, size){ return ICONS[name] ? ICONS[name].replace('<svg ', '<svg style="width:'+(size||16)+'px;height:'+(size||16)+'px" ') : ''; }
 
@@ -617,6 +655,7 @@ function renderStaticLabels(){
   document.getElementById('recTitle').innerHTML = ic('repeat',17)+' Contas recorrentes';
   document.getElementById('futTitle').innerHTML = ic('calendar',17)+' Contas futuras';
   document.getElementById('settingsBtn').innerHTML = ic('settings',14);
+  document.getElementById('exportTrigger').innerHTML = ic('download',13);
   document.getElementById('searchIconSlot').outerHTML = ic('search',14);
   document.querySelector('[data-open="entrada"]').innerHTML = ic('plus',16)+' Entrada';
   document.querySelector('[data-open="saida"]').innerHTML = ic('plus',16)+' Saída';
@@ -1018,6 +1057,100 @@ function showToast(msg, isError){
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> t.classList.remove('show'), 2600);
+}
+
+/* ============================= EXPORTAR (Excel / PDF) ============================= */
+const exportOverlay = document.getElementById('exportOverlay');
+document.getElementById('exportTrigger').addEventListener('click', ()=>{
+  document.getElementById('exportMonth').value = currentYM();
+  exportOverlay.classList.add('open');
+});
+document.getElementById('exportClose').addEventListener('click', ()=> exportOverlay.classList.remove('open'));
+exportOverlay.addEventListener('click', (e)=>{ if(e.target===exportOverlay) exportOverlay.classList.remove('open'); });
+
+function monthData(ym){
+  const lanc = state.lancamentos.filter(l=> l.data.slice(0,7)===ym).sort((a,b)=>a.data.localeCompare(b.data));
+  const entradas = lanc.filter(l=>l.tipo==='entrada').reduce((a,l)=>a+l.valor,0);
+  const saidas = lanc.filter(l=>l.tipo==='saida').reduce((a,l)=>a+l.valor,0);
+  const futurasMes = state.futuras.filter(f=> (f.vencimento||'').slice(0,7)===ym);
+  return { lanc, entradas, saidas, saldoMes: entradas - saidas, futurasMes };
+}
+function nomeMesPt(ym){
+  const [y,m] = ym.split('-').map(Number);
+  return new Date(y, m-1, 1).toLocaleDateString('pt-BR', {month:'long', year:'numeric'});
+}
+
+document.getElementById('exportXlsxBtn').addEventListener('click', ()=>{
+  const ym = document.getElementById('exportMonth').value || currentYM();
+  exportarExcel(ym);
+});
+document.getElementById('exportPdfBtn').addEventListener('click', ()=>{
+  const ym = document.getElementById('exportMonth').value || currentYM();
+  exportarPDF(ym);
+});
+
+function exportarExcel(ym){
+  if(typeof XLSX === 'undefined'){ showToast('Não foi possível carregar o gerador de planilhas. Verifique sua conexão.', true); return; }
+  const { lanc, entradas, saidas, saldoMes, futurasMes } = monthData(ym);
+
+  const linhas = lanc.map(l => ({
+    Data: fmtDateBR(l.data),
+    Tipo: l.tipo === 'entrada' ? 'Entrada' : 'Saída',
+    Categoria: catInfo(l.categoria).label,
+    Descrição: l.descricao,
+    Valor: l.tipo === 'entrada' ? l.valor : -l.valor
+  }));
+  const wsLanc = XLSX.utils.json_to_sheet(linhas);
+  wsLanc['!cols'] = [{wch:12},{wch:10},{wch:16},{wch:36},{wch:14}];
+
+  const resumo = [
+    { Item: 'Mês de referência', Valor: nomeMesPt(ym) },
+    { Item: 'Entradas do mês', Valor: entradas },
+    { Item: 'Saídas do mês', Valor: saidas },
+    { Item: 'Saldo do mês', Valor: saldoMes },
+    { Item: 'Contas futuras com vencimento no mês', Valor: futurasMes.reduce((a,f)=>a+f.valor,0) }
+  ];
+  const wsResumo = XLSX.utils.json_to_sheet(resumo);
+  wsResumo['!cols'] = [{wch:36},{wch:18}];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+  XLSX.utils.book_append_sheet(wb, wsLanc, 'Lançamentos');
+  XLSX.writeFile(wb, 'financeiro-' + ym + '.xlsx');
+  exportOverlay.classList.remove('open');
+  showToast('Planilha exportada.');
+}
+
+function exportarPDF(ym){
+  const { lanc, entradas, saidas, saldoMes } = monthData(ym);
+  const linhas = lanc.map(l => (
+    '<tr>'
+    + '<td>'+fmtDateBR(l.data)+'</td>'
+    + '<td>'+(l.tipo==='entrada'?'Entrada':'Saída')+'</td>'
+    + '<td>'+catInfo(l.categoria).label+'</td>'
+    + '<td>'+escapeHtml(l.descricao)+'</td>'
+    + '<td style="text-align:right;color:'+(l.tipo==='entrada'?'#0a8a55':'#b23c33')+'">'+(l.tipo==='entrada'?'+ ':'- ')+fmtBRL(l.valor)+'</td>'
+    + '</tr>'
+  )).join('');
+
+  const printArea = document.getElementById('printArea');
+  printArea.innerHTML =
+    '<h1>Controle Financeiro — ' + nomeMesPt(ym) + '</h1>'
+    + '<p style="color:#666;margin:0 0 16px;font-size:12px;">Exportado em ' + new Date().toLocaleDateString('pt-BR') + '</p>'
+    + '<table style="margin-bottom:18px;">'
+      + '<tr><td>Entradas</td><td style="text-align:right;">'+fmtBRL(entradas)+'</td></tr>'
+      + '<tr><td>Saídas</td><td style="text-align:right;">'+fmtBRL(saidas)+'</td></tr>'
+      + '<tr style="font-weight:bold;"><td>Saldo do mês</td><td style="text-align:right;">'+fmtBRL(saldoMes)+'</td></tr>'
+    + '</table>'
+    + '<table>'
+      + '<thead><tr><th>Data</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th style="text-align:right;">Valor</th></tr></thead>'
+      + '<tbody>' + (linhas || '<tr><td colspan="5" style="color:#777;">Nenhum lançamento neste mês.</td></tr>') + '</tbody>'
+    + '</table>';
+
+  document.body.classList.add('printing');
+  window.print();
+  setTimeout(()=> document.body.classList.remove('printing'), 500);
+  exportOverlay.classList.remove('open');
 }
 
 /* ============================= AUTENTICAÇÃO ============================= */
