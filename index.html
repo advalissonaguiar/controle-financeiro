@@ -549,8 +549,25 @@ let editing = null; // {kind, id}
 
 const fmtBRL = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);
 const fmtDateBR = iso => { if(!iso) return '—'; const [y,m,d]=iso.split('-'); return d+'/'+m+'/'+y; };
-const todayISO = () => new Date().toISOString().slice(0,10);
-const currentYM = () => new Date().toISOString().slice(0,7);
+function pad2(n){ return String(n).padStart(2,'0'); }
+// Datas em horário LOCAL (não UTC) — evita que lançamentos "sumam" do mês/dia certo
+// à noite no horário de Brasília, quando toISOString() já teria virado o dia em UTC.
+const todayISO = () => { const d = new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); };
+const currentYM = () => { const d = new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1); };
+function mesesEntre(iniISO, fimISO){
+  const [iy, im, idd] = iniISO.split('-').map(Number);
+  const [fy, fm] = fimISO.split('-').map(Number);
+  const out = [];
+  let y = iy, m = im;
+  while (y < fy || (y === fy && m <= fm)){
+    const lastDay = new Date(y, m, 0).getDate();
+    const day = Math.min(idd, lastDay);
+    out.push(y + '-' + pad2(m) + '-' + pad2(day));
+    m++; if(m > 12){ m = 1; y++; }
+    if(out.length > 240) break; // limite de segurança (20 anos)
+  }
+  return out;
+}
 const uid = () => 'id-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -578,12 +595,13 @@ function subscribeUserData(uid){
 }
 async function saveState(){
   const user = auth.currentUser;
-  if(!user) return;
+  if(!user){ showToast('Sessão expirada. Faça login novamente.', true); return; }
   try{
     await setDoc(doc(db,'users',user.uid), state);
   }catch(e){
     console.error('Falha ao salvar', e);
-    showToast('Não foi possível salvar na nuvem. Verifique sua conexão.', true);
+    showToast('Não foi possível salvar na nuvem (' + (e.code || 'erro') + '). Verifique sua conexão e tente de novo.', true);
+    throw e;
   }
 }
 
@@ -638,13 +656,18 @@ function futurasStatus(f){
 
 /* ============================= RENDER ============================= */
 function render(){
-  renderBalance(false);
-  renderStaticLabels();
-  renderOverview();
-  renderLancamentos();
-  renderRecorrentes();
-  renderFuturas();
-  renderFilterControls();
+  try{
+    renderBalance(false);
+    renderStaticLabels();
+    renderOverview();
+    renderLancamentos();
+    renderRecorrentes();
+    renderFuturas();
+    renderFilterControls();
+  }catch(e){
+    console.error('Erro ao renderizar', e);
+    showToast('Ocorreu um erro ao atualizar a tela. Recarregue a página (F5).', true);
+  }
 }
 
 function renderStaticLabels(){
@@ -798,6 +821,7 @@ function renderFuturas(){
         + '<p class="row-desc">'+escapeHtml(f.descricao)+'</p>'
         + '<div class="row-meta"><span>'+cat.label+'</span><span>·</span><span>vence '+fmtDateBR(f.vencimento)+'</span>'
           + '<span class="badge '+st.cls+'">'+st.label+'</span>'
+          + (f.parcelado ? '<span class="badge badge-neutral">Parcela '+f.parcelaNum+'/'+f.parcelaTotal+'</span>' : '')
         + '</div>'
       + '</div>'
       + '<div class="row-amount '+(f.tipo==='entrada'?'pos':'neg')+'">'+(f.tipo==='entrada'?'+ ':'– ')+fmtBRL(f.valor)+'</div>'
@@ -838,8 +862,9 @@ async function deleteItem(kind, id){
   const idx = arr.findIndex(x=>x.id===id);
   if(idx===-1) return;
   if(!confirm('Excluir este item? Essa ação não pode ser desfeita.')) return;
-  arr.splice(idx,1);
-  await saveState();
+  const removed = arr.splice(idx,1)[0];
+  try{ await saveState(); }
+  catch(e){ arr.splice(idx,0,removed); return; }
   render();
   if(kind==='lanc') renderBalance(true);
   showToast('Item excluído.');
@@ -848,12 +873,15 @@ async function deleteItem(kind, id){
 async function lancarRecorrenteAgora(id){
   const r = state.recorrentes.find(x=>x.id===id);
   if(!r) return;
-  state.lancamentos.push({
+  const novo = {
     id: uid(), tipo:r.tipo, descricao:r.descricao, categoria:r.categoria,
     valor:r.valor, data: todayISO(), origem:'recorrente', origemId:r.id
-  });
+  };
+  state.lancamentos.push(novo);
+  const prevUltimo = r.ultimoLancamento;
   r.ultimoLancamento = currentYM();
-  await saveState();
+  try{ await saveState(); }
+  catch(e){ state.lancamentos.pop(); r.ultimoLancamento = prevUltimo; return; }
   render();
   renderBalance(true);
   showToast('Conta recorrente lançada e saldo atualizado.');
@@ -863,11 +891,13 @@ async function marcarComoPaga(id){
   const f = state.futuras.find(x=>x.id===id);
   if(!f) return;
   f.paga = true;
-  state.lancamentos.push({
+  const novo = {
     id: uid(), tipo:f.tipo, descricao:f.descricao, categoria:f.categoria,
     valor:f.valor, data: todayISO(), origem:'futura', origemId:f.id
-  });
-  await saveState();
+  };
+  state.lancamentos.push(novo);
+  try{ await saveState(); }
+  catch(e){ f.paga = false; state.lancamentos.pop(); return; }
   render();
   renderBalance(true);
   showToast('Conta marcada como paga e saldo atualizado.');
@@ -912,7 +942,21 @@ function openModal(kind, id){
     html += '<div class="field"><label>Dia de vencimento (1–31)</label><input type="number" id="fDia" required min="1" max="31" value="'+(data.diaVencimento||5)+'"></div>';
     html += '<div class="field"><label>Ativa</label><div class="switch '+(data.ativa!==false?'on':'')+'" id="fAtiva"></div></div>';
   } else if(kind==='futura'){
-    html += '<div class="field"><label>Data de vencimento</label><input type="date" id="fVenc" required value="'+(data.vencimento||todayISO())+'"></div>';
+    if(!id){
+      html += '<div class="field"><label style="display:flex;align-items:center;justify-content:space-between;">Parcelar esta conta<div class="switch" id="fParcelado"></div></label></div>';
+      html += '<div id="vencSimples">'
+        + '<div class="field"><label>Data de vencimento</label><input type="date" id="fVenc" value="'+todayISO()+'"></div>'
+        + '</div>';
+      html += '<div id="vencParcelado" style="display:none;">'
+        + '<div class="field-row">'
+          + '<div class="field"><label>1ª parcela</label><input type="date" id="fVencIni" value="'+todayISO()+'"></div>'
+          + '<div class="field"><label>Última parcela</label><input type="date" id="fVencFim" value="'+todayISO()+'"></div>'
+        + '</div>'
+        + '<p style="font-size:11px;color:var(--text-faint);margin:-6px 0 4px;">O valor acima é de cada parcela. Uma conta futura será criada para cada mês do período, no mesmo dia da 1ª parcela.</p>'
+        + '</div>';
+    } else {
+      html += '<div class="field"><label>Data de vencimento</label><input type="date" id="fVenc" required value="'+(data.vencimento||todayISO())+'"></div>';
+    }
   }
 
   html += '<div class="modal-actions"><button type="button" class="btn-cancel" id="btnCancel">Cancelar</button><button type="submit" class="btn-save">Salvar</button></div>';
@@ -926,6 +970,16 @@ function openModal(kind, id){
     const sw = document.getElementById('fAtiva');
     sw.dataset.on = data.ativa!==false ? '1':'0';
     sw.onclick = ()=>{ sw.classList.toggle('on'); sw.dataset.on = sw.classList.contains('on')?'1':'0'; };
+  }
+  if(kind==='futura' && !id){
+    const swParc = document.getElementById('fParcelado');
+    swParc.onclick = ()=>{
+      swParc.classList.toggle('on');
+      const on = swParc.classList.contains('on');
+      swParc.dataset.on = on ? '1' : '0';
+      document.getElementById('vencSimples').style.display = on ? 'none' : 'block';
+      document.getElementById('vencParcelado').style.display = on ? 'block' : 'none';
+    };
   }
   document.getElementById('btnCancel').onclick = closeModal;
   overlay.classList.add('open');
@@ -967,6 +1021,7 @@ modalForm.addEventListener('submit', async (e)=>{
 
   if(kind==='lancamento'){
     const data = document.getElementById('fData').value;
+    if(!data){ showToast('Preencha a data.', true); return; }
     if(id){
       const item = state.lancamentos.find(x=>x.id===id);
       Object.assign(item, {tipo, descricao, categoria, valor, data});
@@ -975,24 +1030,52 @@ modalForm.addEventListener('submit', async (e)=>{
     }
   } else if(kind==='recorrente'){
     const diaVencimento = parseInt(document.getElementById('fDia').value,10);
+    if(!diaVencimento || diaVencimento<1 || diaVencimento>31){ showToast('Informe um dia de vencimento válido (1 a 31).', true); return; }
     const ativa = document.getElementById('fAtiva').dataset.on === '1';
     if(id){
       const item = state.recorrentes.find(x=>x.id===id);
       Object.assign(item, {tipo, descricao, categoria, valor, diaVencimento, ativa});
     } else {
-      state.recorrentes.push({id:uid(), tipo, descricao, categoria, valor, diaVencimento, ativa:true, ultimoLancamento:null});
+      state.recorrentes.push({id:uid(), tipo, descricao, categoria, valor, diaVencimento, ativa, ultimoLancamento:null});
     }
   } else if(kind==='futura'){
-    const vencimento = document.getElementById('fVenc').value;
-    if(id){
-      const item = state.futuras.find(x=>x.id===id);
-      Object.assign(item, {tipo, descricao, categoria, valor, vencimento});
+    if(!id && document.getElementById('fParcelado')){
+      const parcelado = document.getElementById('fParcelado').dataset.on === '1';
+      if(parcelado){
+        const ini = document.getElementById('fVencIni').value;
+        const fim = document.getElementById('fVencFim').value;
+        if(!ini || !fim){ showToast('Preencha a data da 1ª e da última parcela.', true); return; }
+        if(fim < ini){ showToast('A última parcela não pode ser antes da primeira.', true); return; }
+        const meses = mesesEntre(ini, fim);
+        if(!meses.length){ showToast('Período de parcelamento inválido.', true); return; }
+        const grupoId = uid();
+        meses.forEach((venc, idx)=>{
+          state.futuras.push({
+            id: uid(), tipo, descricao: descricao + ' (' + (idx+1) + '/' + meses.length + ')',
+            categoria, valor, vencimento: venc, paga:false,
+            parcelado:true, grupoParcelamento: grupoId, parcelaNum: idx+1, parcelaTotal: meses.length
+          });
+        });
+      } else {
+        const vencimento = document.getElementById('fVenc').value;
+        if(!vencimento){ showToast('Preencha a data de vencimento.', true); return; }
+        state.futuras.push({id:uid(), tipo, descricao, categoria, valor, vencimento, paga:false});
+      }
     } else {
-      state.futuras.push({id:uid(), tipo, descricao, categoria, valor, vencimento, paga:false});
+      const vencimento = document.getElementById('fVenc').value;
+      if(!vencimento){ showToast('Preencha a data de vencimento.', true); return; }
+      if(id){
+        const item = state.futuras.find(x=>x.id===id);
+        Object.assign(item, {tipo, descricao, categoria, valor, vencimento});
+      } else {
+        state.futuras.push({id:uid(), tipo, descricao, categoria, valor, vencimento, paga:false});
+      }
     }
   }
 
-  await saveState();
+  try{
+    await saveState();
+  }catch(err){ return; }
   closeModal();
   render();
   if(kind==='lancamento') renderBalance(true);
@@ -1013,8 +1096,10 @@ settingsOverlay.addEventListener('click', (e)=>{ if(e.target===settingsOverlay) 
 document.getElementById('btnSalvarSaldo').addEventListener('click', async ()=>{
   const val = parseFloat(document.getElementById('fSaldoInicial').value);
   if(isNaN(val)){ showToast('Valor inválido.', true); return; }
+  const prev = state.saldoInicial;
   state.saldoInicial = val;
-  await saveState();
+  try{ await saveState(); }
+  catch(e){ state.saldoInicial = prev; return; }
   renderBalance(true);
   renderOverview();
   closeSettings();
