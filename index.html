@@ -1319,9 +1319,26 @@ render(); // desenha rótulos e estados vazios; os dados chegam via subscribeUse
 <script>
 // Registro do service worker — necessário para o Chrome/Android oferecer instalação
 // como app de verdade (ícone próprio, tela cheia), em vez de apenas um atalho.
+// Também detecta quando uma versão nova do app está pronta e oferece recarregar.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      reg.addEventListener('updatefound', () => {
+        const novo = reg.installing;
+        if (!novo) return;
+        novo.addEventListener('statechange', () => {
+          if (novo.state === 'installed' && navigator.serviceWorker.controller) {
+            const t = document.getElementById('toast');
+            if (t) {
+              t.innerHTML = 'Nova versão disponível. <button type="button" id="reloadNewVersion" style="margin-left:8px;text-decoration:underline;background:none;border:none;color:inherit;font-weight:700;cursor:pointer;">Atualizar agora</button>';
+              t.style.borderLeftColor = 'var(--violet)';
+              t.classList.add('show');
+              document.getElementById('reloadNewVersion').onclick = () => location.reload();
+            }
+          }
+        });
+      });
+    }).catch(() => {});
   });
 }
 </script>
