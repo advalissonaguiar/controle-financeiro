@@ -433,6 +433,11 @@ body{
     <button type="button" class="mini-btn primary" id="btnSalvarSaldo" style="width:100%;padding:10px;margin-bottom:18px;">Salvar saldo inicial</button>
 
     <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px;">
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">Categorias</label>
+      <button type="button" class="mini-btn" id="btnGerenciarCategorias" style="width:100%;">Gerenciar categorias</button>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px;">
       <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">Backup dos dados</label>
       <p style="font-size:12px;color:var(--text-faint);margin:0 0 10px;">Seus dados já ficam salvos na nuvem e sincronizados entre dispositivos. Exporte um backup local de vez em quando como cópia extra de segurança.</p>
       <div style="display:flex;gap:8px;">
@@ -462,6 +467,24 @@ body{
     <div class="modal-actions" style="margin-top:10px;">
       <button type="button" class="mini-btn" id="exportPdfBtn" style="flex:1;">Baixar PDF</button>
       <button type="button" class="mini-btn primary" id="exportXlsxBtn" style="flex:1;">Baixar Excel</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="catOverlay">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <div class="modal-title">Categorias</div>
+      <button class="modal-close" id="catClose">✕</button>
+    </div>
+    <div id="catList"></div>
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px;">
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">Nova categoria</label>
+      <div class="field-row">
+        <div class="field" style="flex:2;"><input type="text" id="newCatLabel" placeholder="Nome (ex: Pets)"></div>
+        <div class="field" style="flex:1;"><select id="newCatIcon"></select></div>
+      </div>
+      <button type="button" class="mini-btn primary" id="btnAddCat" style="width:100%;">Adicionar categoria</button>
     </div>
   </div>
 </div>
@@ -529,7 +552,7 @@ const ICONS = {
 };
 function ic(name, size){ return ICONS[name] ? ICONS[name].replace('<svg ', '<svg style="width:'+(size||16)+'px;height:'+(size||16)+'px" ') : ''; }
 
-const CATS = [
+const DEFAULT_CATS = [
   {id:'honorarios', label:'Honorários', icon:'briefcase'},
   {id:'moradia', label:'Moradia', icon:'home'},
   {id:'alimentacao', label:'Alimentação', icon:'utensils'},
@@ -540,7 +563,20 @@ const CATS = [
   {id:'assinaturas', label:'Assinaturas', icon:'repeat'},
   {id:'outros', label:'Outros', icon:'tag'}
 ];
-function catInfo(id){ return CATS.find(c=>c.id===id) || CATS[CATS.length-1]; }
+const ICON_CHOICES = [
+  {id:'briefcase', label:'Maleta'}, {id:'home', label:'Casa'}, {id:'utensils', label:'Alimentação'},
+  {id:'car', label:'Carro'}, {id:'heart', label:'Saúde'}, {id:'star', label:'Lazer'},
+  {id:'book', label:'Livro'}, {id:'repeat', label:'Assinatura'}, {id:'tag', label:'Etiqueta'},
+  {id:'calendar', label:'Calendário'}
+];
+function iconOptions(selected){
+  return ICON_CHOICES.map(o => '<option value="'+o.id+'"'+(o.id===selected?' selected':'')+'>'+o.label+'</option>').join('');
+}
+function catInfo(id){
+  const found = (state.categorias || []).find(c=>c.id===id);
+  if(found) return found;
+  return { id: id||'outros', label: id || 'Outros', icon: 'tag' };
+}
 
 /* ============================= STATE ============================= */
 let state = { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[] };
@@ -574,7 +610,7 @@ function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&'
 /* ============================= STORAGE (Firestore, por usuário) ============================= */
 // Cada usuário autenticado tem um documento próprio em /users/{uid}.
 // As regras de segurança do Firestore garantem que ninguém acesse o documento de outra pessoa.
-function defaultState(){ return { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[] }; }
+function defaultState(){ return { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[], categorias: DEFAULT_CATS.map(c=>({...c})) }; }
 
 function subscribeUserData(uid){
   if(unsubscribeDoc) unsubscribeDoc();
@@ -729,12 +765,12 @@ function renderFilterControls(){
   });
 
   const catSel = document.getElementById('catFilter');
-  if(catSel.dataset.built !== '1'){
-    catSel.innerHTML = '<option value="todas">Todas as categorias</option>' +
-      CATS.map(c=>'<option value="'+c.id+'">'+c.label+'</option>').join('');
-    catSel.dataset.built = '1';
-    catSel.onchange = ()=>{ filters.categoria = catSel.value; renderLancamentos(); };
-  }
+  const prevVal = catSel.value || 'todas';
+  catSel.innerHTML = '<option value="todas">Todas as categorias</option>' +
+    state.categorias.map(c=>'<option value="'+c.id+'">'+c.label+'</option>').join('');
+  catSel.value = state.categorias.some(c=>c.id===prevVal) ? prevVal : 'todas';
+  filters.categoria = catSel.value;
+  catSel.onchange = ()=>{ filters.categoria = catSel.value; renderLancamentos(); };
   document.getElementById('periodoFilter').onchange = (e)=>{ filters.periodo = e.target.value; renderLancamentos(); };
   document.getElementById('searchInput').oninput = (e)=>{ filters.busca = e.target.value.toLowerCase(); renderLancamentos(); };
 }
@@ -917,7 +953,7 @@ function openModal(kind, id){
     if(kind==='futura') data = state.futuras.find(x=>x.id===id);
   }
   data = data || {};
-  const catOptions = CATS.map(c=>'<option value="'+c.id+'"'+(data.categoria===c.id?' selected':'')+'>'+c.label+'</option>').join('');
+  const catOptions = state.categorias.map(c=>'<option value="'+c.id+'"'+(data.categoria===c.id?' selected':'')+'>'+c.label+'</option>').join('');
   const tipoSel = data.tipo || (kind==='lancamento' && editing.presetTipo) || 'saida';
 
   let titleMap = {lancamento:(data.tipo==='entrada'?'Nova entrada':'Nova saída'), recorrente:'Conta recorrente', futura:'Conta futura'};
@@ -1115,12 +1151,111 @@ document.getElementById('fImportFile').addEventListener('change', (e)=>{
 });
 document.getElementById('btnLimparTudo').addEventListener('click', async ()=>{
   if(!confirm('Isso vai apagar TODOS os lançamentos, contas recorrentes e futuras salvos nesta conta. Deseja continuar?')) return;
-  state = { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[] };
+  state = { saldoInicial:0, lancamentos:[], recorrentes:[], futuras:[], categorias: state.categorias };
   await saveState();
   render();
   renderBalance(true);
   closeSettings();
   showToast('Todos os dados foram apagados.');
+});
+
+/* ============================= CATEGORIAS ============================= */
+const catOverlay = document.getElementById('catOverlay');
+let editingCatId = null;
+
+document.getElementById('btnGerenciarCategorias').addEventListener('click', ()=>{
+  closeSettings();
+  document.getElementById('newCatIcon').innerHTML = iconOptions('tag');
+  document.getElementById('newCatLabel').value = '';
+  editingCatId = null;
+  renderCatList();
+  catOverlay.classList.add('open');
+});
+document.getElementById('catClose').addEventListener('click', ()=> catOverlay.classList.remove('open'));
+catOverlay.addEventListener('click', (e)=>{ if(e.target===catOverlay) catOverlay.classList.remove('open'); });
+
+function renderCatList(){
+  const el = document.getElementById('catList');
+  if(!state.categorias.length){ el.innerHTML = emptyState('Nenhuma categoria cadastrada.'); return; }
+  el.innerHTML = state.categorias.map(c => {
+    if(editingCatId === c.id){
+      return '<div class="row-card">'
+        + '<div class="row-icon icon-recorrente">'+ic(c.icon,16)+'</div>'
+        + '<div class="row-main" style="display:flex;gap:8px;">'
+          + '<input type="text" class="filter-input" id="editCatLabel" value="'+escapeHtml(c.label)+'" style="flex:1;">'
+          + '<select class="filter-select" id="editCatIcon">' + iconOptions(c.icon) + '</select>'
+        + '</div>'
+        + '<div class="row-actions">'
+          + '<button class="icon-btn success" id="saveCatEdit" title="Salvar">'+ic('check',13)+'</button>'
+          + '<button class="mini-btn" id="cancelCatEdit">Cancelar</button>'
+        + '</div>'
+      + '</div>';
+    }
+    return '<div class="row-card">'
+      + '<div class="row-icon icon-recorrente">'+ic(c.icon,16)+'</div>'
+      + '<div class="row-main"><p class="row-desc">'+escapeHtml(c.label)+'</p></div>'
+      + '<div class="row-actions">'
+        + '<button class="icon-btn" data-cat-edit="'+c.id+'">'+ic('edit',13)+'</button>'
+        + '<button class="icon-btn danger" data-cat-del="'+c.id+'">'+ic('trash',13)+'</button>'
+      + '</div>'
+    + '</div>';
+  }).join('');
+
+  el.querySelectorAll('[data-cat-edit]').forEach(btn=>{
+    btn.onclick = ()=>{ editingCatId = btn.dataset.catEdit; renderCatList(); };
+  });
+  el.querySelectorAll('[data-cat-del]').forEach(btn=>{
+    btn.onclick = ()=> deleteCategoria(btn.dataset.catDel);
+  });
+  if(editingCatId){
+    const saveBtn = document.getElementById('saveCatEdit');
+    const cancelBtn = document.getElementById('cancelCatEdit');
+    if(saveBtn) saveBtn.onclick = saveCatEdit;
+    if(cancelBtn) cancelBtn.onclick = ()=>{ editingCatId = null; renderCatList(); };
+  }
+}
+
+async function saveCatEdit(){
+  const cat = state.categorias.find(c=>c.id===editingCatId);
+  if(!cat) return;
+  const label = document.getElementById('editCatLabel').value.trim();
+  const icon = document.getElementById('editCatIcon').value;
+  if(!label){ showToast('Digite um nome para a categoria.', true); return; }
+  const prev = { label: cat.label, icon: cat.icon };
+  cat.label = label; cat.icon = icon;
+  try{ await saveState(); }
+  catch(e){ Object.assign(cat, prev); return; }
+  editingCatId = null;
+  render();
+  renderCatList();
+  showToast('Categoria atualizada.');
+}
+
+async function deleteCategoria(id){
+  if(state.categorias.length <= 1){ showToast('Mantenha ao menos uma categoria.', true); return; }
+  if(!confirm('Excluir esta categoria? Lançamentos que já usavam ela continuam existindo, só deixam de mostrar essa categoria específica.')) return;
+  const idx = state.categorias.findIndex(c=>c.id===id);
+  if(idx===-1) return;
+  const removed = state.categorias.splice(idx,1)[0];
+  try{ await saveState(); }
+  catch(e){ state.categorias.splice(idx,0,removed); return; }
+  render();
+  renderCatList();
+  showToast('Categoria excluída.');
+}
+
+document.getElementById('btnAddCat').addEventListener('click', async ()=>{
+  const label = document.getElementById('newCatLabel').value.trim();
+  const icon = document.getElementById('newCatIcon').value || 'tag';
+  if(!label){ showToast('Digite um nome para a categoria.', true); return; }
+  const nova = { id: uid(), label, icon };
+  state.categorias.push(nova);
+  try{ await saveState(); }
+  catch(e){ state.categorias.pop(); return; }
+  document.getElementById('newCatLabel').value = '';
+  render();
+  renderCatList();
+  showToast('Categoria adicionada.');
 });
 
 /* ============================= FILTER RESET ============================= */
