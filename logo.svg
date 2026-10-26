@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17305A"/>
+      <stop offset="1" stop-color="#0A1528"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#1FA968"/>
+      <stop offset="1" stop-color="#3DE09A"/>
+    </linearGradient>
+    <radialGradient id="coin" cx=".36" cy=".32" r=".8">
+      <stop offset="0" stop-color="#FFE7A0"/>
+      <stop offset=".55" stop-color="#F5B82E"/>
+      <stop offset="1" stop-color="#D18E0E"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g id="mark" transform="translate(256 256) scale(0.88) translate(-262 -258)">
+    <path d="M122 388 L210 262 L298 322 L370 178" fill="none" stroke="url(#road)" stroke-width="70" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M122 388 L210 262 L298 322 L370 178" fill="none" stroke="#0A1528" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="22 20" stroke-dashoffset="-6"/>
+    <circle cx="388" cy="142" r="60" fill="#0A1528" opacity=".35"/>
+    <circle cx="386" cy="140" r="58" fill="url(#coin)"/>
+    <circle cx="386" cy="140" r="40" fill="none" stroke="#B57A08" stroke-opacity=".55" stroke-width="6"/>
+    <path d="M386 115 v50 M400 126 c-3-6-9-9-15-9 c-9 0-15 5-15 11 c0 14 31 8 31 23 c0 7-7 12-16 12 c-7 0-13-3-16-9" fill="none" stroke="#9A6505" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
