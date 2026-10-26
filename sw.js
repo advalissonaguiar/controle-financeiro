@@ -1,7 +1,7 @@
-const CACHE = 'financeiro-shell-v3';
+const CACHE = 'financeiro-shell-v4';
 const SHELL = [
   './', './index.html', './manifest.json',
-  './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png'
+  './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png', './logo.svg'
 ];
 
 self.addEventListener('install', (event) => {
