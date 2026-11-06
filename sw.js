@@ -1,4 +1,4 @@
-const CACHE = 'financeiro-shell-v4';
+const CACHE = 'financeiro-shell-v5';
 const SHELL = [
   './', './index.html', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png', './logo.svg'
